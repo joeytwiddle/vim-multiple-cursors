@@ -96,7 +96,9 @@ endfunction
 " is created at the end of the visual selection. Another cursor will be
 " attempted to be created at the next occurrence of the visual selection
 function! multiple_cursors#new(mode)
-  NeoCompleteLock
+  if exists(':NeoCompleteLock')
+    NeoCompleteLock
+  endif
   if a:mode ==# 'n'
     " Reset all existing cursors, don't restore view and setting
     call s:cm.reset(0, 0)
@@ -362,7 +364,9 @@ function! s:CursorManager.reset(restore_view, restore_setting) dict
   if a:restore_setting
     call self.restore_user_settings()
   endif
-  NeoCompleteUnlock
+  if exists(':NeoCompleteUnlock')
+    NeoCompleteUnlock
+  endif
 endfunction
 
 " Returns 0 if it's not managing any cursors at the moment
@@ -756,7 +760,9 @@ endfunction
 
 " Take the user input and apply it at every cursor
 function! s:process_user_input()
-  NeoCompleteLock
+  if exists(':NeoCompleteLock')
+    NeoCompleteLock
+  endif
   " Grr this is frustrating. In Insert mode, between the feedkey call and here,
   " the current position could actually CHANGE for some odd reason. Forcing a
   " position reset here
