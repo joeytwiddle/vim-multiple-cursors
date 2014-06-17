@@ -737,18 +737,10 @@ endfunction
 
 " Consume all the additional character the user typed between the last
 " getchar() and here, to avoid potential race condition.
-" TODO(terryma): This solves the problem of cursors getting out of sync, but
-" we're potentially losing user input. We COULD replay these characters as
-" well...
+" (terryma): This solves the problem of cursors getting out of sync.
+" (joeytwiddle): We are now storing these consumed chars so that we can replay them later.
 function! s:feedkeys(keys)
-  while 1
-    let c = getchar(0)
-    " Checking type is important, when strings are compared with integers,
-    " strings are always converted to ints, and all strings are equal to 0
-    if type(c) == 0 && c == 0
-      break
-    endif
-  endwhile
+  call s:consume_any_pending_keys()
   call feedkeys(a:keys)
 endfunction
 
@@ -802,9 +794,40 @@ function! s:detect_bad_input()
   endif
 endfunction
 
+let s:keys_to_feed_later = ""
+
+" Clears the input key buffer (useful just before doing a feedkeys), but
+" stores consumed keys in a variable so they can be replayed later.
+function! s:consume_any_pending_keys()
+  " It may be worth checking for <Plug> codes here.  Ideally we won't see any,
+  " but if we do, we may want to do something special (e.g. not consume them).
+  while 1
+    let c = getchar(0)
+    " Checking type is important, when strings are compared with integers,
+    " strings are always converted to ints, and all strings are equal to 0
+    let char_type = type(c)
+    if char_type == 0 && c == 0   " Buffer is empty
+      break
+    endif
+    if char_type == 0             " 8-bit char (as number)
+      let s:keys_to_feed_later .= nr2char(c)
+    elseif char_type == 1         " char with more than 8 bits (as string)
+      let s:keys_to_feed_later .= c
+    else                          " I think this will never happen
+      echo "Unknown char_type in multiple_cursor:consume_any_pending_keys(): ".char_type." c=".c
+    endif
+  endwhile
+  "if len(s:keys_to_feed_later) > 0
+    "echo "keys_to_feed_later = ".s:keys_to_feed_later
+  "endif
+endfunction
+
 " Apply the user input at the next cursor location
 function! s:apply_user_input_next(mode)
   let s:valid_input = 1
+
+  " I thought this might be an appropriate place.  But it probably isn't!
+  "call s:consume_any_pending_keys()
 
   " Save the current mode, only if we haven't already
   if empty(s:to_mode)
@@ -829,6 +852,7 @@ function! s:apply_user_input_next(mode)
       call s:update_visual_markers(s:cm.get_current().visual)
     endif
     call feedkeys("\<Plug>(w)")
+
   else
     " Continue to next
     call feedkeys("\<Plug>(i)")
@@ -1000,6 +1024,18 @@ function! s:wait_for_user_input(mode)
   call s:revert_highlight_fix()
 
   call s:end_latency_measure()
+
+  " We are about to read the next input char.
+  " But wait!  We might have consumed some keys earlier, which we now need to
+  " replay *before* whatever is in the input buffer.
+  if len(s:keys_to_feed_later) > 0
+    " Append the input buffer to our existing queue:
+    call s:consume_any_pending_keys()
+    " Send all the queued keys to the input buffer in order they were received.
+    "echo "Feeding pending keys: ".s:keys_to_feed_later
+    call feedkeys(s:keys_to_feed_later)
+    let s:keys_to_feed_later = ""
+  endif
 
   let s:char = s:get_char()
 
